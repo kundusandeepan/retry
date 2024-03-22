@@ -5,6 +5,7 @@ using Autofac.Extensions.DependencyInjection;
 using Autofac.Extras.DynamicProxy;
 using Castle.DynamicProxy;
 using Polly;
+using Polly.Contrib.WaitAndRetry;
 using rnd001.Controller;
 using rnd001.Customization;
 
@@ -51,65 +52,38 @@ public class Startup
   // Don't build the container; that gets done for you by the factory.
   public void ConfigureContainer(ContainerBuilder builder)
   {
-    // builder.RegisterType<RetryInterceptor>();
-    // Register types and interceptors for classes with Retryable attribute
 
-    // builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-    //        .Where(t => t.GetCustomAttribute<RetryableAttribute>() != null)
-    //        .AsSelf()
-    //        .EnableClassInterceptors()
-    //        .InterceptedBy(typeof(RetryInterceptor));
+      var assembly = Assembly.GetExecutingAssembly();
+       var serviceTypes = assembly.GetTypes()
+                                .Where(t => t.GetCustomAttribute<RetryableAttribute>() != null);
+                                  //              t.GetInterfaces().Any(i => i == typeof(IService)));
+        
+        foreach (var serviceType in serviceTypes)
+        {
+            builder.RegisterType(serviceType)
+                .AsImplementedInterfaces()
+                .EnableInterfaceInterceptors()
+                .InterceptedBy(typeof(RetryInterceptor));
+        }
 
-    // builder.RegisterType<RandomGreetingService>()
-    //        .As<IGreetingService>()
-    //        .EnableInterfaceInterceptors()
-    //        .InterceptedBy(typeof(RetryInterceptor));
-
-      // builder.RegisterType<RandomGreetingService>().As<IGreetingService>();
-
-        builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-           .Where(t => t.GetCustomAttribute<RetryableAttribute>() != null)
-           .As<IGreetingService>()
-           .EnableInterfaceInterceptors();
-          //  .InterceptedBy(typeof(RetryInterceptor));
 
     builder.RegisterType<RetryInterceptor>();
+    builder.RegisterType<LoggerService>();
 
-    builder.RegisterType<RetryService>().As<IRetryService>();
-    // This will all go in the ROOT CONTAINER and is NOT TENANT SPECIFIC.
-    // builder.RegisterType<GreetingService>().As<IGreetingService>();
-    // builder.RegisterType<RandomGreetingService>().As<IGreetingService>();
-
-  //  builder.RegisterAssemblyTypes(Assembly.GetExecutingAssembly())
-  //          .Where(t => t.IsClass && t.GetCustomAttribute<RetryableAttribute>() != null)
-  //         //  .As( t=> t.GetInterface(t.FullName))
-  //         //  .AsSelf()
-  //         // .AsClosedTypesOf
-  //         // .As(candidateType =>
-  //         //           candidateType.GetInterfaces()
-  //         //               .Where(i => i.IsClosedTypeOf(openGenericServiceType))
-  //         //               .Select(t => (Service)new TypedService(t)))
-  //         //  .EnableInterfaceInterceptors();
-  //          .EnableClassInterceptors();
-  //         //  .InterceptedBy(typeof(RetryInterceptor));
-
-    // builder.RegisterType<RandomGreetingService>()
-    //               .AsSelf()
-    //               //  .As<IGreetingService>()
-    //            .EnableClassInterceptors()
-    //           //  .EnableInterfaceInterceptors()
-    //            .InterceptedBy(typeof(RetryInterceptor));
-
-
-  // builder.RegisterType<RetryInterceptor>()
-  //      .Named<IInterceptor>(RetryableAttribute.RETRYABLE);
-
+    //example 2
+    // builder.RegisterType<RetryExceptionHandler>();
 
     builder.Register((s) =>
                 {
                   return Policy
                   .Handle<Exception>()
-                  .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+                  //.WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+                  .WaitAndRetryAsync(
+                    Backoff.DecorrelatedJitterBackoffV2(TimeSpan.FromSeconds(1), 3),
+                    onRetry:(exception, sleepDuration, attemptNumber, context) =>{
+                      Console.Write(" error log.... :message: {0}, attempt: {1}, sleepDuration : {2} ", exception.Message , attemptNumber, sleepDuration);
+                    }
+                  );   
                 })
                 .As<IAsyncPolicy>()
                 .SingleInstance();
@@ -118,7 +92,13 @@ public class Startup
                 {
                   return Policy
                   .Handle<Exception>()
-                  .WaitAndRetry(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+                  //.WaitAndRetry(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+                  .WaitAndRetry(
+                    Backoff.DecorrelatedJitterBackoffV2(TimeSpan.FromSeconds(1), 3),
+                    onRetry:(exception, sleepDuration, attemptNumber, context) =>{
+                      Console.Write(" error log.... :message: {0}, attempt: {1}, sleepDuration : {2} ", exception.Message , attemptNumber, sleepDuration);
+                    }
+                  );                  
                 })
                 .As<ISyncPolicy>()
                 .SingleInstance();

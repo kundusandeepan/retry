@@ -1,17 +1,29 @@
-using Autofac.Extras.DynamicProxy;
 using rnd001.Customization;
 
 namespace rnd001;
 
 [Retryable]
-public class RandomGreetingService : IGreetingService, IRetryableService
+public class RandomGreetingService : IGreetingService
 {
-    [Retry(2)]
+    [Retry(5)]
     public String greet(String name)
     {
         Console.Write("invoking greet");
         String lotteryNumber = $"{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}";
         return $"hello {name}!, your lucky lottery number is {lotteryNumber}";
+    }
+
+    public Task<string> greet2(string name)
+    {
+        Console.Write("invoking greet");
+        String lotteryNumber = $"{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}";
+        return Task.FromResult( $"hello {name}!, your lucky lottery number is {lotteryNumber}");
+    }
+
+    [Retry(10)]
+    public Task<string> greet3(string name)
+    {
+        return greet2(name);
     }
 
     private int GetRandomNumber()
