@@ -13,8 +13,8 @@ namespace rnd001.Customization
 
         public RetryInterceptor( IAsyncPolicy asyncPolicy, ISyncPolicy syncPolicy, LoggerService loggerService)
         {
-            this._defaultRetryAsyncPolicy = asyncPolicy;
-            this._defaultRetrySyncPolicy = syncPolicy;
+            this._defaultRetryAsyncPolicy = CreateAsyncRetryPolicy(3);//asyncPolicy;
+            this._defaultRetrySyncPolicy = CreateSyncRetryPolicy(3);//syncPolicy;
             this._loggerService = loggerService;
         }
 
@@ -71,22 +71,6 @@ namespace rnd001.Customization
                 processType = isAsync ? ProcessType.ProcessAsync : ProcessType.ProcessSync;
             }
 
-           /* if (isRetryable && isAsync && hasRetry)
-            {
-                processType = ProcessType.ProcessAsyncWithRetry;
-            }
-            else if (isRetryable && isAsync)
-            {
-                processType = ProcessType.ProcessAsync;
-            }
-            else if (isRetryable && hasRetry)
-            {
-                processType = ProcessType.ProcessSyncWithRetry;
-            }
-            else
-            {
-                processType = isAsync ? ProcessType.ProcessAsync : ProcessType.ProcessSync;
-            }*/
 
             switch(processType){
                 case ProcessType.ProcessSync:
@@ -94,64 +78,54 @@ namespace rnd001.Customization
                     invocation.Proceed();
                     break;
                 case ProcessType.ProcessSyncWithRetry:
-                    ISyncPolicy retrySyncPolicy = retryCount == 3 ? _defaultRetrySyncPolicy : CreateSyncRetryPolicy(retryCount);
+                    ISyncPolicy retrySyncPolicy = _defaultRetrySyncPolicy;//retryCount == 3 ? _defaultRetrySyncPolicy : CreateSyncRetryPolicy(retryCount);
                     InterceptSync(invocation, retrySyncPolicy);
                     break;
                 case ProcessType.ProcessAsyncWithRetry:
-                    IAsyncPolicy retryAsyncPolicy = retryCount == 3 ? _defaultRetryAsyncPolicy : CreateAsyncRetryPolicy(retryCount);
-                    InterceptAsync(invocation, retryAsyncPolicy);
+                    IAsyncPolicy retryAsyncPolicy = _defaultRetryAsyncPolicy;//retryCount == 3 ? _defaultRetryAsyncPolicy : CreateAsyncRetryPolicy(retryCount);
+                    InterceptAsync2(invocation);//, retryAsyncPolicy);
                     break;
             }
-
-            // if (retryableAttribute != null )
-            // {
-                
-            //     int retryCount = retryAttribute.RetryCount;
-            //     // Before invoking the method
-            //     _loggerService.Log($"Intercepting method: {invocation.Method.Name}");
-
-            //     // Check if the method is asynchronous
-            //     if (typeof(Task).IsAssignableFrom(invocation.Method.ReturnType))
-            //     {
-            //         if(retryableAttribute!=null){
-            //             IAsyncPolicy retryAsyncPolicy = retryCount == 3 ? _defaultRetryAsyncPolicy : CreateAsyncRetryPolicy(retryCount);
-            //             InterceptAsync(invocation, retryAsyncPolicy);
-            //         }else{
-            //             invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
-            //         }
-            //     }
-            //     else
-            //     {
-            //         if(retryableAttribute!=null){
-            //             ISyncPolicy retrySyncPolicy = retryCount == 3 ? _defaultRetrySyncPolicy : CreateSyncRetryPolicy(retryCount);
-            //             InterceptSync(invocation, retrySyncPolicy);
-            //         }
-            //         else{
-            //             invocation.Proceed();
-            //         }
-            //     }
-               
-            // }
-
         }
 
         private async void InterceptAsync(IInvocation invocation, IAsyncPolicy retryAsyncPolicy)
         {
             try
             {
-                object returnValue = null;
-                // Execute the method asynchronously within the retry policy
-                await retryAsyncPolicy.ExecuteAsync(async () =>
-                {
-                    _loggerService.Log("Async call");
-                    // Invoke the method asynchronously
-                    returnValue = await (Task)invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
+                _loggerService.Log("==========>>> async call");
 
-                    // After invoking the method
-                    _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+                var result =  await retryAsyncPolicy.ExecuteAsync(async () =>
+                {
+                    // Invoke the method asynchronously
+                    //var task = await (Task)invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
+                    var task = (Task)invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
+                    
+                    // Wait for the task to complete and get the result
+                    await task.ConfigureAwait(false);
+                    var res= GetTaskResult(task);
+                    Console.WriteLine(" inside >> Result : {0}" , res);
+                    return res;
                 });
+
+                Console.WriteLine("outer << Result : {0}" , result);
+
                 // Set the return value after the method invocation
-                invocation.ReturnValue = returnValue;
+                // invocation.ReturnValue = result;
+                Console.WriteLine("outer << ReturnValue : {0}" , invocation.ReturnValue);
+
+                // After invoking the method
+                _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+                    
+                
+                // // Execute the method within the async retry policy
+                // await retryAsyncPolicy.ExecuteAsync(async () => {
+                //     // Invoke the method
+                //     invocation.Proceed();
+
+                //     // After invoking the method
+                //     _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+                // });
+                
             }
             catch (Exception ex)
             {
@@ -159,17 +133,32 @@ namespace rnd001.Customization
                 _loggerService.Log($"Exception occurred in method {invocation.Method.Name}: {ex.Message}");
                 throw; // Re-throw the exception to trigger retry
             }
+            
         }
 
+        // Helper method to get the result of a Task
+        private static object GetTaskResult(Task task)
+        {
+            if (task == null)
+            {
+                return null;
+            }
+            if (task.GetType().IsGenericType && task.GetType().GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                var resultProperty = task.GetType().GetProperty("Result");
+                return resultProperty?.GetValue(task);
+            }
+            return null;
+        }
         private void InterceptSync(IInvocation invocation, ISyncPolicy retrySyncPolicy)
         {
             try
             {
-                _loggerService.Log("sync call");
-                // Execute the method within the retry policy
+                _loggerService.Log("==========>>> sync call");
+                // Execute the method within the sync retry policy
                 retrySyncPolicy.Execute(() =>
                 {
-                    // Invoke the method synchronously
+                    // Invoke the method
                     invocation.Proceed();
 
                     // After invoking the method
@@ -183,12 +172,109 @@ namespace rnd001.Customization
                 throw; // Re-throw the exception to trigger retry
             }
         }
-    }
-}
+        
+        private async void InterceptAsync2(IInvocation invocation)
+        {
+            try
+            {
+                // Execute the method asynchronously within the retry policy
+                object result = await _defaultRetryAsyncPolicy.ExecuteAsync(async () =>
+                {
+                    // Invoke the method asynchronously
+                    var task = (Task)invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
 
-public enum ProcessType{
-    ProcessSync,
-    ProcessAsync,
-    ProcessSyncWithRetry,
-    ProcessAsyncWithRetry,
+                    // Wait for the task to complete and get the result
+                    await task.ConfigureAwait(false);
+                    return GetTaskResult(task);
+                });
+
+                // Set the return value after the method invocation
+                invocation.ReturnValue = Task.FromResult(result);
+
+                // After invoking the method
+                _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+            }
+            catch (Exception ex)
+            {
+                // Log the exception
+                _loggerService.Log($"Exception occurred in method {invocation.Method.Name}: {ex.Message}");
+                throw; // Re-throw the exception to trigger retry
+            }
+        }
+
+        // public void InterceptAsync3(IInvocation invocation)
+        // {
+        //     // Before invoking the method
+        //     _loggerService.Log($"Intercepting method: {invocation.Method.Name}");
+
+        //     // Wrap the retry policy with asynchronous execution
+        //     var wrapAsyncPolicy = Policy.WrapAsync(_defaultRetryAsyncPolicy);
+        //     wrapAsyncPolicy.ExecuteAsync(async () =>
+        //     {
+        //         try
+        //         {
+        //             // Invoke the method asynchronously
+        //             invocation.Proceed();
+
+        //             // After invoking the method
+        //             _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+        //         }
+        //         catch (Exception ex)
+        //         {
+        //             // Log the exception
+        //             _loggerService.Log($"Exception occurred in method {invocation.Method.Name}: {ex.Message}");
+        //             throw; // Re-throw the exception to trigger retry
+        //         }
+        //     }).Wait(); // Wait for the asynchronous execution to complete
+        // }
+
+        // private async void InterceptAsync4(IInvocation invocation)
+        // {
+        //     try
+        //     {
+        //         // Execute the method asynchronously within the retry policy
+        //        Task<PolicyResult> resultTask =  _defaultRetryAsyncPolicy.ExecuteAndCaptureAsync(async () =>
+        //         {
+        //              invocation.Proceed();
+        //             // Invoke the method asynchronously
+        //             // var task = (Task)invocation.Method.Invoke(invocation.InvocationTarget, invocation.Arguments);
+
+        //             // Wait for the task to complete and get the result
+        //             // return await task;
+        //         });
+        //         PolicyResult<object> result = null;// await resultTask;
+
+        //         if (result.Outcome == OutcomeType.Successful)
+        //         {
+        //             // Operation succeeded, read the result value
+        //             string value = (String)result.Result;
+        //             Console.WriteLine($"Operation succeeded with result: {value}");
+        //         }
+        //         else if (result.Outcome == OutcomeType.Failure)
+        //         {
+        //             // Operation failed
+        //             Exception exception = result.FinalException;
+        //             Console.WriteLine($"Operation failed with exception: {exception.Message}");
+        //         }
+        //         else if (result.Outcome == OutcomeType.None)
+        //         {
+        //             // Policy was canceled
+        //             Console.WriteLine("Policy execution was canceled.");
+        //         }
+
+        //         // Set the return value after the method invocation
+        //         invocation.ReturnValue = Task.FromResult(result);
+
+        //         // After invoking the method
+        //         _loggerService.Log($"Method {invocation.Method.Name} executed successfully");
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         // Log the exception
+        //         _loggerService.Log($"Exception occurred in method {invocation.Method.Name}: {ex.Message}");
+        //         throw; // Re-throw the exception to trigger retry
+        //     }
+        // }
+        
+    }
 }

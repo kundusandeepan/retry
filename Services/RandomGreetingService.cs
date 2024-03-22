@@ -13,7 +13,7 @@ public class RandomGreetingService : IGreetingService
         return $"hello {name}!, your lucky lottery number is {lotteryNumber}";
     }
 
-    public Task<string> greet2(string name)
+    public Task<String> greet2(string name)
     {
         Console.Write("invoking greet");
         String lotteryNumber = $"{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}-{GetRandomNumber()}";
@@ -21,7 +21,7 @@ public class RandomGreetingService : IGreetingService
     }
 
     [Retry(10)]
-    public Task<string> greet3(string name)
+    public Task<String> greet3(string name)
     {
         return greet2(name);
     }

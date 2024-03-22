@@ -102,7 +102,7 @@ namespace rnd001.Customization
             try
             {
                 // Execute the method within the retry policy
-                retrySyncPolicy.Execute(NewMethod(invocation));
+                retrySyncPolicy.Execute(syncAction(invocation));
             }
             catch (Exception ex)
             {
@@ -112,7 +112,7 @@ namespace rnd001.Customization
             }
         }
 
-        private Action NewMethod(IInvocation invocation)
+        private Action syncAction(IInvocation invocation)
         {
             return () =>
             {
