@@ -15,16 +15,19 @@ public class HelloController
         this._greetingService = greetingService;
     }
 
+    //synchronous
     [HttpGet("/api/sayhello")]
     public String sayHello(){
         return _greetingService.greet("beautiful");
     }
-
+   
+    //synchronous
     [HttpGet("/api/sayhello2")]
     public Task<String> sayHello2(){
         return _greetingService.greet2("beautiful");
     }
 
+    //asynchronous
     [HttpGet("/api/sayhello3")]
     public async Task<String> sayHello3(){
         Task<String> aa = _greetingService.greet3("beautiful");
@@ -33,6 +36,7 @@ public class HelloController
     }
 
 
+    //asynchronous
     [HttpGet("/api/sayhello4")]
     public async Task<String> sayHello4(){
         

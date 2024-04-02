@@ -63,11 +63,27 @@ public class Startup
             builder.RegisterType(serviceType)
                 .AsImplementedInterfaces()
                 .EnableInterfaceInterceptors()
-                .InterceptedBy(typeof(RetryInterceptor));
+                // .InterceptedBy(typeof(RetryInterceptorV2));
+                // .InterceptedBy(typeof(RetryInterceptorV3));
+                //.InterceptedBy(typeof(RetryInterceptor));
+                .InterceptedBy(typeof(SimpleRetryInterceptor));
+                
         }
 
+        
 
-    builder.RegisterType<RetryInterceptor>();
+    // builder.RegisterType<RetryInterceptor>();
+    // builder.RegisterType<RetryInterceptorV3>();
+    builder.RegisterType<SimpleRetryInterceptor>();
+
+    // builder.RegisterType<RetryInterceptorV2>().
+
+    //var myClass = new ClasThatImplementsIMyInterface();
+        // var generator = new ProxyGenerator();
+        // var interceptor = new ClasThatImplementsIAsyncInterceptor();
+        // IMyInterface proxy = generator.CreateInterfaceProxyWithTargetInterface<IMyInterface>(myClass, interceptor)
+
+
     builder.RegisterType<LoggerService>();
 
     //example 2

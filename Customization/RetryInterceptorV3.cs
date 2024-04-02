@@ -1,19 +1,51 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using Castle.DynamicProxy;
+using Microsoft.AspNetCore.SignalR.Protocol;
 using Polly;
 using Polly.Contrib.WaitAndRetry;
 using rnd001.Customization;
 
 namespace rnd001.Customization
 {
-    public class RetryInterceptorV2 : IAsyncInterceptor
+    public class RetryInterceptorV3 : IInterceptor,IAsyncInterceptor
     {
-        // private readonly ISyncPolicy _defaultRetrySyncPolicy;
-        // private readonly IAsyncPolicy _defaultRetryAsyncPolicy;
+        // private static readonly MethodInfo HandleAsyncMethodInfo =
+        // typeof(AsyncDeterminationInterceptor)
+        //         .GetMethod(nameof(HandleAsyncWithResult), BindingFlags.Static | BindingFlags.NonPublic)!;
+
+        // private static readonly ConcurrentDictionary<Type, GenericAsyncHandler> GenericAsyncHandlers = new();
+
+        private delegate void GenericAsyncHandler(IInvocation invocation, IAsyncInterceptor asyncInterceptor);
+
+        private enum MethodType
+        {
+            Synchronous,
+            AsyncAction,
+            AsyncFunction,
+        }
+
+        // /// <summary>
+        // /// Gets the underlying async interceptor.
+        // /// </summary>
+        // public IAsyncInterceptor AsyncInterceptor { get; }
+
+        /// <summary>
+        /// This method is created as a delegate and used to make the call to the generic
+        /// <see cref="IAsyncInterceptor.InterceptAsynchronous{T}"/> method.
+        /// </summary>
+        /// <typeparam name="TResult">The type of the <see cref="Task{T}"/> <see cref="Task{T}.Result"/> of the method
+        /// <paramref name="invocation"/>.</typeparam>
+        private void HandleAsyncWithResult<TResult>(IInvocation invocation, IAsyncInterceptor asyncInterceptor)
+        {
+            this.InterceptAsynchronous<TResult>(invocation);
+        }
+
+
         private readonly LoggerService _loggerService;
         // // private readonly PolicyExecutor _policyExecutor;
 
-        public RetryInterceptorV2(LoggerService loggerService)//, PolicyExecutor policyExecutor)
+        public RetryInterceptorV3(LoggerService loggerService)//, PolicyExecutor policyExecutor)
         {
             // IAsyncPolicy asyncPolicy, ISyncPolicy syncPolicy,
             // this._defaultRetryAsyncPolicy = asyncPolicy;
@@ -139,31 +171,62 @@ namespace rnd001.Customization
                     );
         }
 
+        /// <summary>
+        /// Gets the <see cref="MethodType"/> based upon the <paramref name="returnType"/> of the method invocation.
+        /// </summary>
+        private static MethodType GetMethodType(Type returnType)
+        {
+            // If there's no return type, or it's not a task, then assume it's a synchronous method.
+            if (returnType == typeof(void) || !typeof(Task).IsAssignableFrom(returnType))
+                return MethodType.Synchronous;
+
+            // The return type is a task of some sort, so assume it's asynchronous
+            return returnType.GetTypeInfo().IsGenericType ? MethodType.AsyncFunction : MethodType.AsyncAction;
+        }
+
+        // /// <summary>
+        // /// Gets the <see cref="GenericAsyncHandler"/> for the method invocation <paramref name="returnType"/>.
+        // /// </summary>
+        // private static GenericAsyncHandler GetHandler(Type returnType)
+        // {
+        //     // GenericAsyncHandler handler = GenericAsyncHandlers.GetOrAdd(returnType, CreateHandler);
+        //     // return handler;
+        //     return CreateHandler(returnType);
+        // }
+
+        // /// <summary>
+        // /// Creates the generic delegate for the <paramref name="returnType"/> method invocation.
+        // /// </summary>
+        // private static GenericAsyncHandler CreateHandler(Type returnType)
+        // {
+        //     Type taskReturnType = returnType.GetGenericArguments()[0];
+        //     MethodInfo method = InvocationBindingFailureMessage.me.MakeGenericMethod(taskReturnType);
+        //     return (GenericAsyncHandler)method.CreateDelegate(typeof(GenericAsyncHandler));
+        // }
+
+
+        public void Intercept(IInvocation invocation)
+        {
+             MethodType methodType = GetMethodType(invocation.Method.ReturnType);
+
+            switch (methodType)
+            {
+                case MethodType.AsyncAction:
+                    this.InterceptAsynchronous(invocation);
+                    return;
+                case MethodType.AsyncFunction:
+                    Type taskReturnType = invocation.Method.ReturnType.GetGenericArguments()[0];
+                    MethodInfo method = invocation.Method.MakeGenericMethod(taskReturnType);
+                    GenericAsyncHandler genericHandler = (GenericAsyncHandler)method.CreateDelegate(typeof(GenericAsyncHandler));
+                    genericHandler.Invoke(invocation, this);
+                    
+                    // this.InterceptAsynchronous
+                    return;
+                case MethodType.Synchronous:
+                default:
+                    this.InterceptSynchronous(invocation);
+                    return;
+            }
+        }
     }
 }
-
-
-// public class PolicyExecutor
-// {
-
-//     private readonly LoggerService _loggerService;
-//     private readonly IAsyncPolicy _retryAsyncPolicy;
-//     private readonly ISyncPolicy _retrySyncPolicy;
-//     public PolicyExecutor(LoggerService loggerService, IAsyncPolicy retryAsyncPolicy, ISyncPolicy retrySyncPolicy){
-//         this._loggerService = loggerService;
-//         this._retryAsyncPolicy = retryAsyncPolicy;
-//         this._retrySyncPolicy = retrySyncPolicy;
-//     }
-
-//     public async Task ExecuteWithRetryAsync(Func<Task> func)
-//     {
-//         await _retryAsyncPolicy.ExecuteAsync(func);
-//     }
-
-//     public async Task ExecuteWithRetrySync(Action action)
-//     {
-//          _retrySyncPolicy.Execute(action);
-
-//          await Task.CompletedTask;
-//     }
-// }
